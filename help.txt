@@ -1,20 +1,46 @@
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  display_name TEXT,
+  role TEXT DEFAULT 'user',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price TEXT NOT NULL DEFAULT 'Free',
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  location TEXT NOT NULL,
   description TEXT,
   total_seats INTEGER NOT NULL,
-  available_seats INTEGER NOT NULL
+  available_seats INTEGER NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE registrations (
+CREATE TABLE IF NOT EXISTS registrations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  event_id UUID REFERENCES events(id),
-  user_id UUID REFERENCES users(id),
-  registered_at TIMESTAMP DEFAULT NOW()
+  event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  ticket_id TEXT NOT NULL,
+  registered_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS waitlist (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  ticket_id TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
