@@ -1,145 +1,101 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr, Field
-import uuid
+from pydantic import BaseModel, EmailStr
+from supabase import create_client
+from dotenv import load_dotenv
+from typing import Optional
+import os
 
-from database import SessionLocal
-from models import User, Todo
-from services import hash_password
+load_dotenv()
+
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 app = FastAPI()
 
-# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update with specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# -----------------------------
-# DB Dependency
-# -----------------------------
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# -----------------------------
-# Schemas
-# -----------------------------
-class UserCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=100)
+class UserSignup(BaseModel):
+    name: str
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: str
 
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
 
-class TodoCreate(BaseModel):
-    user_id: uuid.UUID
-    title: str = Field(min_length=1, max_length=200)
-    description: str | None = None
-
-
-# -----------------------------
-# Routes
-# -----------------------------
+class EventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    total_seats: int
 
 @app.get("/")
 def root():
-    return {"message": "hi"}
+    return {"message": "API is running"}
 
-@app.post("/users")
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
+@app.post("/signup")
+def signup(user: UserSignup):
+    try:
+        res = supabase.auth.sign_up({"email": user.email, "password": user.password})
+        uid = res.user.id
+        supabase.table("users").insert({"id": uid, "name": user.name, "email": user.email}).execute()
+        return {"message": "Account created", "user_id": uid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    existing = db.query(User).filter(User.email == user.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+@app.post("/login")
+def login(credentials: UserLogin):
+    try:
+        res = supabase.auth.sign_in_with_password({"email": credentials.email, "password": credentials.password})
+        return {"message": "Login successful", "user_id": res.user.id, "name": res.user.email}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    new_user = User(
-        name=user.name,
-        email=user.email,
-        password_hash=hash_password(user.password)
-    )
+@app.get("/events")
+def list_events():
+    res = supabase.table("events").select("*").execute()
+    return res.data
 
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+@app.post("/events")
+def create_event(event: EventCreate):
+    res = supabase.table("events").insert({
+        "title": event.title,
+        "description": event.description,
+        "total_seats": event.total_seats,
+        "available_seats": event.total_seats
+    }).execute()
+    return {"message": "Event created", "data": res.data}
 
-    return {
-        "id": new_user.id,
-        "name": new_user.name,
-        "email": new_user.email
-    }
+@app.post("/events/{event_id}/register")
+def register(event_id: str, user_id: str):
+    event = supabase.table("events").select("*").eq("id", event_id).single().execute()
+    if not event.data:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.data["available_seats"] <= 0:
+        raise HTTPException(status_code=400, detail="Event is fully booked")
 
+    already = supabase.table("registrations").select("*").eq("event_id", event_id).eq("user_id", user_id).execute()
+    if already.data:
+        raise HTTPException(status_code=400, detail="Already registered")
 
-@app.post("/todos")
-def create_todo(todo: TodoCreate, db: Session = Depends(get_db)):
+    supabase.table("registrations").insert({"event_id": event_id, "user_id": user_id}).execute()
+    supabase.table("events").update({"available_seats": event.data["available_seats"] - 1}).eq("id", event_id).execute()
 
-    user = db.query(User).filter(User.id == todo.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Registered successfully", "seats_remaining": event.data["available_seats"] - 1}
 
-    new_todo = Todo(
-        user_id=todo.user_id,
-        title=todo.title,
-        description=todo.description
-    )
+@app.get("/users/{user_id}/registrations")
+def my_registrations(user_id: str):
+    regs = supabase.table("registrations").select("*, events(*)").eq("user_id", user_id).execute()
+    return regs.data
 
-    db.add(new_todo)
-    db.commit()
-    db.refresh(new_todo)
-
-    return {
-        "id": new_todo.id,
-        "user_id": new_todo.user_id,
-        "title": new_todo.title,
-        "description": new_todo.description,
-        "completed": new_todo.completed,
-        "created_at": new_todo.created_at
-    }
-
-
-@app.get("/users/{user_id}/todos")
-def get_user_todos(user_id: uuid.UUID, db: Session = Depends(get_db)):
-
-    todos = db.query(Todo).filter(Todo.user_id == user_id).all()
-
-    return todos
-
-@app.get("/users")
-def get_users(db: Session = Depends(get_db)):
-
-    users = db.query(User).all()
-
-    return [
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-            "created_at": user.created_at
-        }
-        for user in users
-    ]
-
-@app.delete("/users/{user_id}/todos/{todo_id}")
-def delete_user_todo(user_id: uuid.UUID, todo_id: uuid.UUID, db: Session = Depends(get_db)):
-
-    todo = (
-        db.query(Todo)
-        .filter(Todo.id == todo_id, Todo.user_id == user_id)
-        .first()
-    )
-
-    if not todo:
-        raise HTTPException(status_code=404, detail="Todo not found")
-
-    db.delete(todo)
-    db.commit()
-
-    return {"message": "Todo deleted successfully"}
+@app.delete("/events/{event_id}/register")
+def cancel(event_id: str, user_id: str):
+    supabase.table("registrations").delete().eq("event_id", event_id).eq("user_id", user_id).execute()
+    event = supabase.table("events").select("available_seats").eq("id", event_id).single().execute()
+    supabase.table("events").update({"available_seats": event.data["available_seats"] + 1}).eq("id", event_id).execute()
+    return {"message": "Registration cancelled"}

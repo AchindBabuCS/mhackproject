@@ -1,0 +1,20 @@
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  description TEXT,
+  total_seats INTEGER NOT NULL,
+  available_seats INTEGER NOT NULL
+);
+
+CREATE TABLE registrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID REFERENCES events(id),
+  user_id UUID REFERENCES users(id),
+  registered_at TIMESTAMP DEFAULT NOW()
+);
