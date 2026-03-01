@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from supabase import create_client
 from dotenv import load_dotenv
-from typing import Optional
 import os
 
 load_dotenv()
@@ -28,11 +27,6 @@ class UserSignup(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-
-class EventCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    total_seats: int
 
 @app.get("/")
 def root():
@@ -61,15 +55,6 @@ def list_events():
     res = supabase.table("events").select("*").execute()
     return res.data
 
-@app.post("/events")
-def create_event(event: EventCreate):
-    res = supabase.table("events").insert({
-        "title": event.title,
-        "description": event.description,
-        "total_seats": event.total_seats,
-        "available_seats": event.total_seats
-    }).execute()
-    return {"message": "Event created", "data": res.data}
 
 @app.post("/events/{event_id}/register")
 def register(event_id: str, user_id: str):
