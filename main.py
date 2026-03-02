@@ -16,7 +16,7 @@ app = FastAPI(title="EventArc API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*", "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -470,14 +470,3 @@ def get_analytics():
         "category_breakdown": cat_counts,
         "event_stats": event_stats
     }
-```
-
----
-
-## Everything else you need to do
-
-### 1. Your `.env` file
-Make sure this file exists in the same folder as `main.py` and has your real values:
-```
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_KEY=your-anon-public-key
